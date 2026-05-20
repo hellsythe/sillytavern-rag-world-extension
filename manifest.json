@@ -1,0 +1,12 @@
+{
+  "display_name": "RAG + World State Bridge",
+  "loading_order": 950,
+  "requires": [],
+  "optional": [],
+  "js": "index.js",
+  "css": "",
+  "author": "hellsythe",
+  "version": "0.1.0",
+  "homePage": "https://github.com/hellsythe/sillytavern-rag-worldstate-extension",
+  "auto_update": true
+}
