@@ -1,21 +1,34 @@
-import { initSettings, getSettings, getSettingsHost } from './src/settings.js';
-import { fetchRagContext, fetchWorldState, completeTurn, bootstrapSession } from './src/api.js';
+import {
+  initSettings,
+  getSettings,
+  getSettingsHost,
+  getCurrentChatId,
+  getWorldIdForChat,
+} from './src/settings.js';
+import {
+  fetchRagContext,
+  fetchWorldState,
+  completeTurn,
+  bootstrapSession,
+  testBackend,
+} from './src/api.js';
 import { mountDebugPanel, renderDebug } from './src/debug.js';
 
 const EXTENSION_NAME = 'rag-worldstate-bridge';
 const bootstrappedSessions = new Set();
 
 async function ensureSessionBootstrap(settings, sessionId) {
-  if (!settings.autoBootstrap || !settings.worldId) {
+  const worldId = getWorldIdForChat(settings, getCurrentChatId());
+  if (!settings.autoBootstrap || !worldId) {
     return;
   }
 
-  const key = `${sessionId}:${settings.worldId}`;
+  const key = `${sessionId}:${worldId}`;
   if (bootstrappedSessions.has(key)) {
     return;
   }
 
-  await bootstrapSession(settings, sessionId, settings.worldId, false);
+  await bootstrapSession(settings, sessionId, worldId, false);
   bootstrappedSessions.add(key);
 }
 
@@ -130,7 +143,13 @@ function registerSlashCommand() {
 
 jQuery(async () => {
   initSettings(EXTENSION_NAME);
-  mountDebugPanel(getSettingsHost());
+  mountDebugPanel(getSettingsHost(), async () => {
+    const settings = {
+      ...getSettings(),
+      onDebug: (endpoint, payload) => renderDebug(getSettings().debug, endpoint, payload),
+    };
+    await testBackend(settings);
+  });
   registerSlashCommand();
 
   document.addEventListener('keydown', async (event) => {

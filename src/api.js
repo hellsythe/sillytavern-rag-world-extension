@@ -106,3 +106,32 @@ export async function bootstrapSession(settings, sessionId, worldId, forceReinge
   });
   return result.data;
 }
+
+export async function testBackend(settings) {
+  try {
+    const result = await callJson(`${settings.backendUrl}/sillytavern/worlds`, {
+      method: 'GET',
+    });
+    settings.onDebug?.('backend/test', {
+      request: { url: `${settings.backendUrl}/sillytavern/worlds` },
+      response: {
+        ok: true,
+        worldsCount: Array.isArray(result.data) ? result.data.length : 0,
+      },
+      ...result.debugMeta,
+    });
+    return true;
+  } catch (error) {
+    settings.onDebug?.('backend/test', {
+      request: { url: `${settings.backendUrl}/sillytavern/worlds` },
+      response: null,
+      url: `${settings.backendUrl}/sillytavern/worlds`,
+      method: 'GET',
+      status: error?.debugMeta?.status || 500,
+      latencyMs: error?.debugMeta?.latencyMs || 0,
+      ok: false,
+      error: String(error?.message || error),
+    });
+    return false;
+  }
+}

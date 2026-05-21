@@ -29,6 +29,7 @@ In extension settings panel:
 - **Top K**: number of chunks to retrieve
 - **Session Prefix**: prefix for generated `sessionId`
 - **World ID**: backend world profile id for bootstrap
+- **World ID (Current Chat)**: per-chat override; if set, this chat uses its own world
 - **Auto turn complete**: send completed turn payloads automatically
 - **Auto bootstrap session**: initialize session with selected world before retrieval
 - **Debug logs**: console diagnostics

@@ -6,7 +6,7 @@ let debugElements = {
   response: null,
 };
 
-export function mountDebugPanel(host) {
+export function mountDebugPanel(host, onTestBackend) {
   const panel = document.createElement('div');
   panel.className = 'extension_block';
   panel.style.marginTop = '8px';
@@ -17,6 +17,9 @@ export function mountDebugPanel(host) {
         <div><b>Endpoint:</b> <span id="ragws_debug_endpoint">-</span></div>
         <div><b>Status:</b> <span id="ragws_debug_status">-</span></div>
         <div><b>Latency:</b> <span id="ragws_debug_latency">-</span></div>
+        <div style="margin: 8px 0;">
+          <button id="ragws_debug_test" class="menu_button" type="button">Test Backend</button>
+        </div>
         <label>Last Request</label>
         <textarea id="ragws_debug_request" class="text_pole" rows="4" readonly></textarea>
         <label>Last Response</label>
@@ -33,6 +36,18 @@ export function mountDebugPanel(host) {
     request: panel.querySelector('#ragws_debug_request'),
     response: panel.querySelector('#ragws_debug_response'),
   };
+
+  const testButton = panel.querySelector('#ragws_debug_test');
+  if (testButton && onTestBackend) {
+    testButton.addEventListener('click', async () => {
+      testButton.disabled = true;
+      try {
+        await onTestBackend();
+      } finally {
+        testButton.disabled = false;
+      }
+    });
+  }
 }
 
 export function renderDebug(enabled, endpoint, payload) {

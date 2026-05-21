@@ -4,6 +4,7 @@ const defaultSettings = {
   autoTurnComplete: true,
   autoBootstrap: true,
   worldId: '',
+  chatWorldMap: {},
   sessionPrefix: 'st-',
   debug: false,
 };
@@ -27,6 +28,14 @@ export function getSettings() {
   return { ...defaultSettings, ...saved };
 }
 
+export function getCurrentChatId() {
+  return window?.chat_metadata?.chat_id || 'default-chat';
+}
+
+export function getWorldIdForChat(settings, chatId) {
+  return settings.chatWorldMap?.[chatId] || settings.worldId || '';
+}
+
 function getStorageKey() {
   return `extension_settings:${extensionName}`;
 }
@@ -37,6 +46,8 @@ function saveSettings(next) {
 
 function renderSettings(settings) {
   const host = getSettingsHost();
+  const chatId = getCurrentChatId();
+  const chatWorldId = getWorldIdForChat(settings, chatId);
   const container = document.createElement('div');
   container.className = 'extension_block';
   container.innerHTML = `
@@ -57,6 +68,13 @@ function renderSettings(settings) {
         <label>World ID</label>
         <input id="ragws_world_id" class="text_pole" type="text" value="${settings.worldId}" placeholder="world uuid" />
 
+        <label>Current Chat ID</label>
+        <input id="ragws_chat_id" class="text_pole" type="text" value="${chatId}" readonly />
+
+        <label>World ID (Current Chat)</label>
+        <input id="ragws_chat_world_id" class="text_pole" type="text" value="${chatWorldId}" placeholder="override world uuid for this chat" />
+        <small>Leave empty to use global World ID.</small>
+
         <label><input id="ragws_auto_turn" type="checkbox" ${settings.autoTurnComplete ? 'checked' : ''}/> Auto turn complete</label>
         <label><input id="ragws_auto_bootstrap" type="checkbox" ${settings.autoBootstrap ? 'checked' : ''}/> Auto bootstrap session</label>
         <label><input id="ragws_debug" type="checkbox" ${settings.debug ? 'checked' : ''}/> Debug logs</label>
@@ -71,6 +89,17 @@ function renderSettings(settings) {
   bind('ragws_top_k', (e) => saveSettings({ ...getSettings(), topK: Number(e.target.value || 5) }));
   bind('ragws_session_prefix', (e) => saveSettings({ ...getSettings(), sessionPrefix: e.target.value || 'st-' }));
   bind('ragws_world_id', (e) => saveSettings({ ...getSettings(), worldId: e.target.value.trim() }));
+  bind('ragws_chat_world_id', (e) => {
+    const next = getSettings();
+    const nextMap = { ...(next.chatWorldMap || {}) };
+    const value = e.target.value.trim();
+    if (value) {
+      nextMap[chatId] = value;
+    } else {
+      delete nextMap[chatId];
+    }
+    saveSettings({ ...next, chatWorldMap: nextMap });
+  });
   bind('ragws_auto_turn', (e) => saveSettings({ ...getSettings(), autoTurnComplete: e.target.checked }));
   bind('ragws_auto_bootstrap', (e) => saveSettings({ ...getSettings(), autoBootstrap: e.target.checked }));
   bind('ragws_debug', (e) => saveSettings({ ...getSettings(), debug: e.target.checked }));
