@@ -12,13 +12,29 @@ import {
   bootstrapSession,
   testBackend,
 } from './src/api.js';
-import { mountDebugPanel, renderDebug } from './src/debug.js';
+import { mountDebugPanel, renderDebug, setInjectionMode } from './src/debug.js';
 import { eventSource, event_types, chat, chat_metadata } from '../../../script.js';
 
 const EXTENSION_NAME = 'rag-worldstate-bridge';
 const bootstrappedSessions = new Set();
 let lastCompletedTurnKey = '';
 let isInjecting = false;
+let lastContextBlock = '';
+
+function setPromptExtensionBlock(content) {
+  const setExtensionPrompt = globalThis?.setExtensionPrompt;
+  if (typeof setExtensionPrompt !== 'function') {
+    return false;
+  }
+
+  try {
+    setExtensionPrompt(EXTENSION_NAME, content, 1, 0, false);
+    return true;
+  } catch (error) {
+    console.warn(`[${EXTENSION_NAME}] setExtensionPrompt failed`, error);
+    return false;
+  }
+}
 
 async function ensureSessionBootstrap(settings, sessionId) {
   const worldId = getWorldIdForChat(settings, getCurrentChatId());
@@ -83,6 +99,16 @@ async function injectContextIntoInput() {
     ]);
 
     const contextBlock = buildContextBlock(world, rag?.chunks || []);
+    lastContextBlock = contextBlock;
+
+    const injectedAsExtensionPrompt = setPromptExtensionBlock(contextBlock);
+    if (injectedAsExtensionPrompt) {
+      setInjectionMode('extension-prompt');
+      return;
+    }
+
+    setInjectionMode('textarea-fallback');
+
     if (textarea.value.includes('[WORLD STATE]')) {
       return;
     }
@@ -196,6 +222,17 @@ jQuery(async () => {
   });
 
   if (eventSource && event_types) {
+    if (event_types.GENERATION_AFTER_COMMANDS) {
+      eventSource.makeFirst(event_types.GENERATION_AFTER_COMMANDS, async () => {
+        if (!lastContextBlock) {
+          return;
+        }
+
+        setPromptExtensionBlock(lastContextBlock);
+        setInjectionMode('extension-prompt');
+      });
+    }
+
     eventSource.on(event_types.CHAT_CHANGED, async () => {
       try {
         const settings = {
@@ -204,6 +241,9 @@ jQuery(async () => {
         };
         const sessionId = settings.sessionPrefix + (chat_metadata?.chat_id || 'default-chat');
         lastCompletedTurnKey = '';
+        lastContextBlock = '';
+        setPromptExtensionBlock('');
+        setInjectionMode('idle');
         await ensureSessionBootstrap(settings, sessionId);
       } catch (error) {
         console.error(`[${EXTENSION_NAME}] chat bootstrap failed`, error);

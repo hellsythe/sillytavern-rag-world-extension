@@ -1,4 +1,5 @@
 let debugElements = {
+  mode: null,
   endpoint: null,
   status: null,
   latency: null,
@@ -14,6 +15,7 @@ export function mountDebugPanel(host, onTestBackend) {
     <div class="inline-drawer">
       <div class="inline-drawer-toggle inline-drawer-header"><b>RAG Bridge Debug</b></div>
       <div class="inline-drawer-content">
+        <div><b>Prompt injection mode:</b> <span id="ragws_debug_mode">-</span></div>
         <div><b>Endpoint:</b> <span id="ragws_debug_endpoint">-</span></div>
         <div><b>Status:</b> <span id="ragws_debug_status">-</span></div>
         <div><b>Latency:</b> <span id="ragws_debug_latency">-</span></div>
@@ -30,6 +32,7 @@ export function mountDebugPanel(host, onTestBackend) {
   host.prepend(panel);
 
   debugElements = {
+    mode: panel.querySelector('#ragws_debug_mode'),
     endpoint: panel.querySelector('#ragws_debug_endpoint'),
     status: panel.querySelector('#ragws_debug_status'),
     latency: panel.querySelector('#ragws_debug_latency'),
@@ -48,6 +51,14 @@ export function mountDebugPanel(host, onTestBackend) {
       }
     });
   }
+}
+
+export function setInjectionMode(mode) {
+  if (!debugElements.mode) {
+    return;
+  }
+
+  debugElements.mode.textContent = mode;
 }
 
 export function renderDebug(enabled, endpoint, payload) {
