@@ -4,50 +4,80 @@ const defaultSettings = {
   autoTurnComplete: true,
   autoBootstrap: true,
   worldId: '',
-  chatWorldMap: {},
   sessionPrefix: 'st-',
   debug: false,
 };
 
-let extensionName = '';
+const MODULE_NAME = 'rag-worldstate-bridge';
 
-export function initSettings(name) {
-  extensionName = name;
-  const saved = JSON.parse(localStorage.getItem(getStorageKey()) || '{}');
-  const settings = { ...defaultSettings, ...saved };
-  localStorage.setItem(getStorageKey(), JSON.stringify(settings));
-  renderSettings(settings);
+function getContext() {
+  return globalThis.SillyTavern?.getContext?.() || null;
 }
 
-export function getSettingsHost() {
-  return document.querySelector('#extensions_settings') || document.body;
+export function initSettings() {
+  const context = getContext();
+  if (!context) {
+    return;
+  }
+
+  if (!context.extensionSettings[MODULE_NAME]) {
+    context.extensionSettings[MODULE_NAME] = structuredClone(defaultSettings);
+  }
+
+  for (const key of Object.keys(defaultSettings)) {
+    if (!Object.hasOwn(context.extensionSettings[MODULE_NAME], key)) {
+      context.extensionSettings[MODULE_NAME][key] = defaultSettings[key];
+    }
+  }
 }
 
 export function getSettings() {
-  const saved = JSON.parse(localStorage.getItem(getStorageKey()) || '{}');
-  return { ...defaultSettings, ...saved };
+  initSettings();
+  const context = getContext();
+  if (!context) {
+    return structuredClone(defaultSettings);
+  }
+  return context.extensionSettings[MODULE_NAME];
+}
+
+export function getSettingsHost() {
+  return document.querySelector('#extensions_settings2') || document.querySelector('#extensions_settings') || document.body;
 }
 
 export function getCurrentChatId() {
-  return window?.chat_metadata?.chat_id || 'default-chat';
+  const context = getContext();
+  return globalThis?.chat_metadata?.chat_id || context?.chatId || 'default-chat';
 }
 
-export function getWorldIdForChat(settings, chatId) {
-  return settings.chatWorldMap?.[chatId] || settings.worldId || '';
-}
-
-function getStorageKey() {
-  return `extension_settings:${extensionName}`;
+export function getWorldIdForChat(settings) {
+  const context = getContext();
+  const chatMetadata = context?.chatMetadata || {};
+  return chatMetadata.ragWorldId || settings.worldId || '';
 }
 
 function saveSettings(next) {
-  localStorage.setItem(getStorageKey(), JSON.stringify(next));
+  const context = getContext();
+  if (!context) {
+    return;
+  }
+  context.extensionSettings[MODULE_NAME] = next;
+  context.saveSettingsDebounced();
 }
 
-function renderSettings(settings) {
+async function saveChatWorldId(value) {
+  const context = getContext();
+  if (!context) {
+    return;
+  }
+  context.chatMetadata.ragWorldId = value || '';
+  await context.saveMetadata();
+}
+
+export function renderSettings() {
+  const settings = getSettings();
   const host = getSettingsHost();
   const chatId = getCurrentChatId();
-  const chatWorldId = getWorldIdForChat(settings, chatId);
+  const chatWorldId = getWorldIdForChat(settings);
   const container = document.createElement('div');
   container.className = 'extension_block';
   container.innerHTML = `
@@ -65,15 +95,15 @@ function renderSettings(settings) {
         <label>Session Prefix</label>
         <input id="ragws_session_prefix" class="text_pole" type="text" value="${settings.sessionPrefix}" />
 
-        <label>World ID</label>
+        <label>World ID (Global)</label>
         <input id="ragws_world_id" class="text_pole" type="text" value="${settings.worldId}" placeholder="world uuid" />
 
         <label>Current Chat ID</label>
         <input id="ragws_chat_id" class="text_pole" type="text" value="${chatId}" readonly />
 
         <label>World ID (Current Chat)</label>
-        <input id="ragws_chat_world_id" class="text_pole" type="text" value="${chatWorldId}" placeholder="override world uuid for this chat" />
-        <small>Leave empty to use global World ID.</small>
+        <input id="ragws_chat_world_id" class="text_pole" type="text" value="${chatWorldId}" placeholder="override for this chat" />
+        <small>Saved in chat metadata. Leave empty to use global value.</small>
 
         <label><input id="ragws_auto_turn" type="checkbox" ${settings.autoTurnComplete ? 'checked' : ''}/> Auto turn complete</label>
         <label><input id="ragws_auto_bootstrap" type="checkbox" ${settings.autoBootstrap ? 'checked' : ''}/> Auto bootstrap session</label>
@@ -89,16 +119,8 @@ function renderSettings(settings) {
   bind('ragws_top_k', (e) => saveSettings({ ...getSettings(), topK: Number(e.target.value || 5) }));
   bind('ragws_session_prefix', (e) => saveSettings({ ...getSettings(), sessionPrefix: e.target.value || 'st-' }));
   bind('ragws_world_id', (e) => saveSettings({ ...getSettings(), worldId: e.target.value.trim() }));
-  bind('ragws_chat_world_id', (e) => {
-    const next = getSettings();
-    const nextMap = { ...(next.chatWorldMap || {}) };
-    const value = e.target.value.trim();
-    if (value) {
-      nextMap[chatId] = value;
-    } else {
-      delete nextMap[chatId];
-    }
-    saveSettings({ ...next, chatWorldMap: nextMap });
+  bind('ragws_chat_world_id', async (e) => {
+    await saveChatWorldId(e.target.value.trim());
   });
   bind('ragws_auto_turn', (e) => saveSettings({ ...getSettings(), autoTurnComplete: e.target.checked }));
   bind('ragws_auto_bootstrap', (e) => saveSettings({ ...getSettings(), autoBootstrap: e.target.checked }));
