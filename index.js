@@ -13,13 +13,21 @@ import {
   testBackend,
 } from './src/api.js';
 import { mountDebugPanel, renderDebug, setInjectionMode } from './src/debug.js';
-import { eventSource, event_types, chat, chat_metadata } from '../../../script.js';
 
 const EXTENSION_NAME = 'rag-worldstate-bridge';
 const bootstrappedSessions = new Set();
 let lastCompletedTurnKey = '';
 let isInjecting = false;
 let lastContextBlock = '';
+
+function getStRuntime() {
+  return {
+    eventSource: globalThis?.eventSource,
+    event_types: globalThis?.event_types,
+    chat: globalThis?.chat,
+    chat_metadata: globalThis?.chat_metadata,
+  };
+}
 
 function setPromptExtensionBlock(content) {
   const setExtensionPrompt = globalThis?.setExtensionPrompt;
@@ -128,13 +136,13 @@ async function runTurnCompleteHook() {
     return;
   }
 
-  const sessionId = settings.sessionPrefix + (window?.chat_metadata?.chat_id || 'default-chat');
+  const { chat, chat_metadata } = getStRuntime();
+  const sessionId = settings.sessionPrefix + (chat_metadata?.chat_id || 'default-chat');
   await ensureSessionBootstrap(settings, sessionId);
   const sceneId = `scene-${Date.now()}`;
-  const context = window?.context || {};
-  const chat = context?.chat || [];
-  const user = chat.at(-2)?.mes || '';
-  const assistant = chat.at(-1)?.mes || '';
+  const chatMessages = Array.isArray(chat) ? chat : window?.context?.chat || [];
+  const user = chatMessages.at(-2)?.mes || '';
+  const assistant = chatMessages.at(-1)?.mes || '';
 
   if (!user || !assistant) {
     return;
@@ -221,9 +229,10 @@ jQuery(async () => {
     }
   });
 
-  if (eventSource && event_types) {
-    if (event_types.GENERATION_AFTER_COMMANDS) {
-      eventSource.makeFirst(event_types.GENERATION_AFTER_COMMANDS, async () => {
+  const runtime = getStRuntime();
+  if (runtime.eventSource && runtime.event_types) {
+    if (runtime.event_types.GENERATION_AFTER_COMMANDS) {
+      runtime.eventSource.makeFirst(runtime.event_types.GENERATION_AFTER_COMMANDS, async () => {
         if (!lastContextBlock) {
           return;
         }
@@ -233,8 +242,9 @@ jQuery(async () => {
       });
     }
 
-    eventSource.on(event_types.CHAT_CHANGED, async () => {
+    runtime.eventSource.on(runtime.event_types.CHAT_CHANGED, async () => {
       try {
+        const { chat_metadata } = getStRuntime();
         const settings = {
           ...getSettings(),
           onDebug: (endpoint, payload) => renderDebug(getSettings().debug, endpoint, payload),
@@ -250,11 +260,11 @@ jQuery(async () => {
       }
     });
 
-    eventSource.on(event_types.CHAT_CREATED, async () => {
+    runtime.eventSource.on(runtime.event_types.CHAT_CREATED, async () => {
       lastCompletedTurnKey = '';
     });
 
-    eventSource.makeFirst(event_types.CHARACTER_MESSAGE_RENDERED, async () => {
+    runtime.eventSource.makeFirst(runtime.event_types.CHARACTER_MESSAGE_RENDERED, async () => {
       try {
         await runTurnCompleteHook();
       } catch (error) {
@@ -263,7 +273,7 @@ jQuery(async () => {
     });
   }
 
-  if (!eventSource || !event_types) {
+  if (!runtime.eventSource || !runtime.event_types) {
     document.addEventListener('message_sent', async () => {
       try {
         await runTurnCompleteHook();
