@@ -13,10 +13,12 @@ import {
   testBackend,
 } from './src/api.js';
 import { mountDebugPanel, renderDebug } from './src/debug.js';
+import { eventSource, event_types, chat, chat_metadata } from '../../../script.js';
 
 const EXTENSION_NAME = 'rag-worldstate-bridge';
 const bootstrappedSessions = new Set();
 let lastCompletedTurnKey = '';
+let isInjecting = false;
 
 async function ensureSessionBootstrap(settings, sessionId) {
   const worldId = getWorldIdForChat(settings, getCurrentChatId());
@@ -53,33 +55,42 @@ function buildContextBlock(worldState, chunks) {
 }
 
 async function injectContextIntoInput() {
-  const settings = {
-    ...getSettings(),
-    onDebug: (endpoint, payload) => renderDebug(getSettings().debug, endpoint, payload),
-  };
-  const textarea = document.querySelector('#send_textarea');
-  if (!textarea) {
+  if (isInjecting) {
     return;
   }
 
-  const message = textarea.value?.trim();
-  if (!message) {
-    return;
+  isInjecting = true;
+  try {
+    const settings = {
+      ...getSettings(),
+      onDebug: (endpoint, payload) => renderDebug(getSettings().debug, endpoint, payload),
+    };
+    const textarea = document.querySelector('#send_textarea');
+    if (!textarea) {
+      return;
+    }
+
+    const message = textarea.value?.trim();
+    if (!message) {
+      return;
+    }
+
+    const sessionId = settings.sessionPrefix + (window?.chat_metadata?.chat_id || 'default-chat');
+    await ensureSessionBootstrap(settings, sessionId);
+    const [rag, world] = await Promise.all([
+      fetchRagContext(settings, sessionId, message),
+      fetchWorldState(settings, sessionId),
+    ]);
+
+    const contextBlock = buildContextBlock(world, rag?.chunks || []);
+    if (textarea.value.includes('[WORLD STATE]')) {
+      return;
+    }
+
+    textarea.value = `${contextBlock}\n\n${textarea.value}`;
+  } finally {
+    isInjecting = false;
   }
-
-  const sessionId = settings.sessionPrefix + (window?.chat_metadata?.chat_id || 'default-chat');
-  await ensureSessionBootstrap(settings, sessionId);
-  const [rag, world] = await Promise.all([
-    fetchRagContext(settings, sessionId, message),
-    fetchWorldState(settings, sessionId),
-  ]);
-
-  const contextBlock = buildContextBlock(world, rag?.chunks || []);
-  if (textarea.value.includes('[WORLD STATE]')) {
-    return;
-  }
-
-  textarea.value = `${contextBlock}\n\n${textarea.value}`;
 }
 
 async function runTurnCompleteHook() {
@@ -174,19 +185,6 @@ jQuery(async () => {
     }
   });
 
-  const textarea = document.querySelector('#send_textarea');
-  textarea?.addEventListener('keydown', async (event) => {
-    if (event.key === 'Enter' && !event.shiftKey && !event.ctrlKey && !event.metaKey) {
-      event.preventDefault();
-      try {
-        await injectContextIntoInput();
-      } catch (error) {
-        console.error(`[${EXTENSION_NAME}] context injection before enter-send failed`, error);
-      }
-      sendButton?.click();
-    }
-  });
-
   document.addEventListener('keydown', async (event) => {
     if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
       try {
@@ -197,19 +195,41 @@ jQuery(async () => {
     }
   });
 
-  document.addEventListener('message_sent', async () => {
-    try {
-      await runTurnCompleteHook();
-    } catch (error) {
-      console.error(`[${EXTENSION_NAME}] turn complete failed`, error);
-    }
-  });
+  if (eventSource && event_types) {
+    eventSource.on(event_types.CHAT_CHANGED, async () => {
+      try {
+        const settings = {
+          ...getSettings(),
+          onDebug: (endpoint, payload) => renderDebug(getSettings().debug, endpoint, payload),
+        };
+        const sessionId = settings.sessionPrefix + (chat_metadata?.chat_id || 'default-chat');
+        lastCompletedTurnKey = '';
+        await ensureSessionBootstrap(settings, sessionId);
+      } catch (error) {
+        console.error(`[${EXTENSION_NAME}] chat bootstrap failed`, error);
+      }
+    });
 
-  setInterval(async () => {
-    try {
-      await runTurnCompleteHook();
-    } catch (error) {
-      console.error(`[${EXTENSION_NAME}] turn poll failed`, error);
-    }
-  }, 2500);
+    eventSource.on(event_types.CHAT_CREATED, async () => {
+      lastCompletedTurnKey = '';
+    });
+
+    eventSource.makeFirst(event_types.CHARACTER_MESSAGE_RENDERED, async () => {
+      try {
+        await runTurnCompleteHook();
+      } catch (error) {
+        console.error(`[${EXTENSION_NAME}] turn complete failed`, error);
+      }
+    });
+  }
+
+  if (!eventSource || !event_types) {
+    document.addEventListener('message_sent', async () => {
+      try {
+        await runTurnCompleteHook();
+      } catch (error) {
+        console.error(`[${EXTENSION_NAME}] turn complete failed`, error);
+      }
+    });
+  }
 });
