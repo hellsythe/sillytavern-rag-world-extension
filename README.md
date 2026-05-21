@@ -25,7 +25,7 @@ In SillyTavern:
 
 In extension settings panel:
 
-- **Backend URL**: e.g. `http://localhost:3000`
+- **Backend URL**: e.g. `http://localhost:3000/api/v1`
 - **Top K**: number of chunks to retrieve
 - **Session Prefix**: prefix for generated `sessionId`
 - **World ID**: backend world profile id for bootstrap

@@ -16,6 +16,7 @@ import { mountDebugPanel, renderDebug } from './src/debug.js';
 
 const EXTENSION_NAME = 'rag-worldstate-bridge';
 const bootstrappedSessions = new Set();
+let lastCompletedTurnKey = '';
 
 async function ensureSessionBootstrap(settings, sessionId) {
   const worldId = getWorldIdForChat(settings, getCurrentChatId());
@@ -102,12 +103,18 @@ async function runTurnCompleteHook() {
     return;
   }
 
+  const dedupeKey = `${sessionId}::${user.slice(0, 120)}::${assistant.slice(0, 120)}`;
+  if (dedupeKey === lastCompletedTurnKey) {
+    return;
+  }
+
   await completeTurn(settings, {
     sessionId,
     sceneId,
     userMessage: user,
     assistantMessage: assistant,
   });
+  lastCompletedTurnKey = dedupeKey;
 }
 
 function registerSlashCommand() {
@@ -152,6 +159,34 @@ jQuery(async () => {
   });
   registerSlashCommand();
 
+  const settingsForTest = {
+    ...getSettings(),
+    onDebug: (endpoint, payload) => renderDebug(getSettings().debug, endpoint, payload),
+  };
+  await testBackend(settingsForTest);
+
+  const sendButton = document.querySelector('#send_but');
+  sendButton?.addEventListener('click', async () => {
+    try {
+      await injectContextIntoInput();
+    } catch (error) {
+      console.error(`[${EXTENSION_NAME}] context injection on click failed`, error);
+    }
+  });
+
+  const textarea = document.querySelector('#send_textarea');
+  textarea?.addEventListener('keydown', async (event) => {
+    if (event.key === 'Enter' && !event.shiftKey && !event.ctrlKey && !event.metaKey) {
+      event.preventDefault();
+      try {
+        await injectContextIntoInput();
+      } catch (error) {
+        console.error(`[${EXTENSION_NAME}] context injection before enter-send failed`, error);
+      }
+      sendButton?.click();
+    }
+  });
+
   document.addEventListener('keydown', async (event) => {
     if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
       try {
@@ -169,4 +204,12 @@ jQuery(async () => {
       console.error(`[${EXTENSION_NAME}] turn complete failed`, error);
     }
   });
+
+  setInterval(async () => {
+    try {
+      await runTurnCompleteHook();
+    } catch (error) {
+      console.error(`[${EXTENSION_NAME}] turn poll failed`, error);
+    }
+  }, 2500);
 });

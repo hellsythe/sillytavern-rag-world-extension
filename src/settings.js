@@ -1,5 +1,5 @@
 const defaultSettings = {
-  backendUrl: 'http://localhost:3000',
+  backendUrl: 'http://localhost:3000/api/v1',
   topK: 5,
   autoTurnComplete: true,
   autoBootstrap: true,
