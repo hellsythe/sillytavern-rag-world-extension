@@ -106,6 +106,47 @@ async function fetchAndApplyContext(promptText) {
     request: { mode, sessionId },
     response: { chars: contextBlock.length },
   });
+
+  return contextBlock;
+}
+
+function injectContextIntoChat(chat, contextBlock) {
+  if (!Array.isArray(chat) || !contextBlock) {
+    return;
+  }
+
+  const marker = '[WORLD STATE]';
+
+  for (let i = chat.length - 1; i >= 0; i -= 1) {
+    const mes = chat[i]?.mes;
+    if (typeof mes === 'string' && mes.startsWith(marker)) {
+      chat.splice(i, 1);
+    }
+  }
+
+  let lastUserIndex = -1;
+  for (let i = chat.length - 1; i >= 0; i -= 1) {
+    if (chat[i]?.is_user) {
+      lastUserIndex = i;
+      break;
+    }
+  }
+
+  const injectionMessage = {
+    name: 'RAG Context',
+    is_user: false,
+    is_system: true,
+    mes: contextBlock,
+    extra: {
+      type: 'rag_worldstate_context',
+    },
+  };
+
+  if (lastUserIndex >= 0) {
+    chat.splice(lastUserIndex, 0, injectionMessage);
+  } else {
+    chat.push(injectionMessage);
+  }
 }
 
 async function runTurnCompleteHook() {
@@ -146,7 +187,9 @@ globalThis.ragWorldstateGenerateInterceptor = async function (chat) {
   }
 
   try {
-    await fetchAndApplyContext(prompt);
+    const contextBlock = await fetchAndApplyContext(prompt);
+    injectContextIntoChat(chat, contextBlock);
+    setInjectionMode('chat-interceptor');
   } catch (error) {
     console.error(`[${EXTENSION_NAME}] interceptor failed`, error);
   }
