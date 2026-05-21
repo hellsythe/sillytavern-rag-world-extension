@@ -1,8 +1,23 @@
 import { initSettings, getSettings, getSettingsHost } from './src/settings.js';
-import { fetchRagContext, fetchWorldState, completeTurn } from './src/api.js';
+import { fetchRagContext, fetchWorldState, completeTurn, bootstrapSession } from './src/api.js';
 import { mountDebugPanel, renderDebug } from './src/debug.js';
 
 const EXTENSION_NAME = 'rag-worldstate-bridge';
+const bootstrappedSessions = new Set();
+
+async function ensureSessionBootstrap(settings, sessionId) {
+  if (!settings.autoBootstrap || !settings.worldId) {
+    return;
+  }
+
+  const key = `${sessionId}:${settings.worldId}`;
+  if (bootstrappedSessions.has(key)) {
+    return;
+  }
+
+  await bootstrapSession(settings, sessionId, settings.worldId, false);
+  bootstrappedSessions.add(key);
+}
 
 function buildContextBlock(worldState, chunks) {
   const worldLines = [];
@@ -39,6 +54,7 @@ async function injectContextIntoInput() {
   }
 
   const sessionId = settings.sessionPrefix + (window?.chat_metadata?.chat_id || 'default-chat');
+  await ensureSessionBootstrap(settings, sessionId);
   const [rag, world] = await Promise.all([
     fetchRagContext(settings, sessionId, message),
     fetchWorldState(settings, sessionId),
@@ -62,6 +78,7 @@ async function runTurnCompleteHook() {
   }
 
   const sessionId = settings.sessionPrefix + (window?.chat_metadata?.chat_id || 'default-chat');
+  await ensureSessionBootstrap(settings, sessionId);
   const sceneId = `scene-${Date.now()}`;
   const context = window?.context || {};
   const chat = context?.chat || [];

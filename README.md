@@ -28,7 +28,9 @@ In extension settings panel:
 - **Backend URL**: e.g. `http://localhost:3000`
 - **Top K**: number of chunks to retrieve
 - **Session Prefix**: prefix for generated `sessionId`
+- **World ID**: backend world profile id for bootstrap
 - **Auto turn complete**: send completed turn payloads automatically
+- **Auto bootstrap session**: initialize session with selected world before retrieval
 - **Debug logs**: console diagnostics
 
 ## Debug panel

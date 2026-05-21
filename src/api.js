@@ -90,3 +90,19 @@ export async function completeTurn(settings, payload) {
   });
   return result.data;
 }
+
+export async function bootstrapSession(settings, sessionId, worldId, forceReingest = false) {
+  const result = await callJson(
+    `${settings.backendUrl}/sillytavern/sessions/${encodeURIComponent(sessionId)}/bootstrap/${encodeURIComponent(worldId)}`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ forceReingest }),
+    },
+  );
+  settings.onDebug?.('session/bootstrap', {
+    request: { sessionId, worldId, forceReingest },
+    response: result.data,
+    ...result.debugMeta,
+  });
+  return result.data;
+}
